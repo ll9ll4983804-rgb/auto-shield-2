@@ -1,10 +1,15 @@
 package com.autoshield;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -25,6 +30,11 @@ public class AutoShieldClient implements ClientModInitializer {
     private static final double MELEE_CLOSE = 4.0;   // a mace player this close counts as a threat
     private static final int DAMAGE_HOLD = 8;        // ticks to block after you took damage
 
+    private static final String ID = "autoshield";
+    private KeyMapping toggleKey;
+    private boolean enabled = true;
+    private LocalPlayer lastPlayer = null;
+
     private boolean held = false;       // we are holding the use key
     private int previousSlot = -1;
     private int shieldSlot = -1;
@@ -34,6 +44,10 @@ public class AutoShieldClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        KeyMapping.Category category =
+                KeyMapping.Category.register(Identifier.fromNamespaceAndPath(ID, "category"));
+        toggleKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.autoshield.toggle", InputConstants.Type.KEYSYM, 72, category)); // H
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
@@ -42,6 +56,24 @@ public class AutoShieldClient implements ClientModInitializer {
         if (player == null || mc.level == null) {
             reset(mc);
             lastHealth = -1.0f;
+            return;
+        }
+
+        if (player != lastPlayer) {
+            lastPlayer = player;
+            player.sendSystemMessage(Component.literal(
+                    "Auto Shield: " + (enabled ? "ON" : "OFF") + " (key H to toggle, see Controls)"));
+        }
+        while (toggleKey.consumeClick()) {
+            enabled = !enabled;
+            player.sendSystemMessage(Component.literal("Auto Shield: " + (enabled ? "ON" : "OFF")));
+            if (!enabled) {
+                release(mc, player);
+                damageTicks = 0;
+            }
+        }
+        if (!enabled) {
+            lastHealth = player.getHealth();
             return;
         }
 
