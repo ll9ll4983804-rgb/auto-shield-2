@@ -1,4 +1,19 @@
 {
-  "key.category.autoshield.category": "Auto Shield",
-  "key.autoshield.toggle": "Auto Shield (on/off)"
+  "schemaVersion": 1,
+  "id": "autoshield",
+  "version": "1.0.0",
+  "name": "Auto Shield",
+  "description": "Raises the shield before projectiles and mace hits, switching to it from the hotbar and back.",
+  "authors": ["Ayman"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.autoshield.AutoShieldClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
 }
