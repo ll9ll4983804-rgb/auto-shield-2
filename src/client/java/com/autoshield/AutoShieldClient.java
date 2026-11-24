@@ -8,17 +8,19 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Auto Shield: raises the shield BEFORE an arrow / projectile hits (predicts it), and also reacts
+ * Auto Shield: raises the shield BEFORE an arrow / mace / sword / axe hit lands (predicts it), and also reacts
  * to damage as a fallback. If the shield is in the hotbar it switches to it, then goes back to
  * the previous slot once the danger has passed.
  */
@@ -28,6 +30,8 @@ public class AutoShieldClient implements ClientModInitializer {
     private static final int HOLD_AFTER_CLEAR = 6;   // ticks to keep the shield up after the danger is gone
     private static final double MELEE_RANGE = 6.0;   // look for mace players this close (blocks)
     private static final double MELEE_CLOSE = 4.0;   // a mace player this close counts as a threat
+    private static final double BLADE_RANGE = 3.8;   // sword / axe player this close and facing you = threat
+    private static final double BLADE_FACING = 0.6;  // 1.0 = looking straight at you
     private static final int DAMAGE_HOLD = 8;        // ticks to block after you took damage
 
     private static final String ID = "autoshield";
@@ -89,7 +93,7 @@ public class AutoShieldClient implements ClientModInitializer {
         boolean screenOpen = mc.gui.screen() != null;
         boolean manualUse = !held && mc.options.keyUse.isDown(); // you are eating / drawing a bow yourself
         boolean threat = !screenOpen && !manualUse
-                && (projectileIncoming(mc, player) || maceThreat(mc, player) || damageTicks > 0);
+                && (projectileIncoming(mc, player) || meleeThreat(mc, player) || damageTicks > 0);
 
         if (threat) {
             clearTicks = 0;
@@ -121,17 +125,39 @@ public class AutoShieldClient implements ClientModInitializer {
         return player.getMainHandItem().is(Items.SHIELD) || player.getOffhandItem().is(Items.SHIELD);
     }
 
-    /** True if another player holding a mace is close, or is falling onto you from above. */
-    private boolean maceThreat(Minecraft mc, LocalPlayer player) {
+    /** True if another player with a mace / sword / axe is about to hit you. */
+    private boolean meleeThreat(Minecraft mc, LocalPlayer player) {
+        // While you are attacking yourself (holding attack), do not block, so you can fight back.
+        if (mc.options.keyAttack.isDown()) {
+            return false;
+        }
         AABB area = player.getBoundingBox().inflate(MELEE_RANGE);
         List<Player> others = mc.level.getEntitiesOfClass(
-                Player.class, area, p -> p != player && p.getMainHandItem().is(Items.MACE));
+                Player.class, area, p -> p != player && p.getMainHandItem() != null);
+        Vec3 me = player.getBoundingBox().getCenter();
         for (Player p : others) {
-            if (p.distanceTo(player) <= MELEE_CLOSE) {
-                return true;
+            ItemStack held = p.getMainHandItem();
+            if (held.is(Items.MACE)) {
+                if (p.distanceTo(player) <= MELEE_CLOSE) {
+                    return true;
+                }
+                if (p.getDeltaMovement().y < -0.3 && p.getY() > player.getY()) {
+                    return true;
+                }
+                continue;
             }
-            if (p.getDeltaMovement().y < -0.3 && p.getY() > player.getY()) {
-                return true;
+            String path = BuiltInRegistries.ITEM.getKey(held.getItem()).getPath();
+            if (path.endsWith("_sword") || path.endsWith("_axe")) {
+                if (p.distanceTo(player) > BLADE_RANGE) {
+                    continue;
+                }
+                Vec3 toMe = me.subtract(p.getBoundingBox().getCenter());
+                if (toMe.lengthSqr() < 1.0E-4) {
+                    return true;
+                }
+                if (p.getLookAngle().dot(toMe.normalize()) > BLADE_FACING) {
+                    return true;
+                }
             }
         }
         return false;
