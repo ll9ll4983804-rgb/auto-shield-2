@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -20,6 +21,8 @@ public class AutoShieldClient implements ClientModInitializer {
     private static final double RANGE = 14.0;        // how far to look for projectiles (blocks)
     private static final double AIM_DOT = 0.85;      // 1.0 = flying exactly at you
     private static final int HOLD_AFTER_CLEAR = 6;   // ticks to keep the shield up after the danger is gone
+    private static final double MELEE_RANGE = 6.0;   // look for mace players this close (blocks)
+    private static final double MELEE_CLOSE = 4.0;   // a mace player this close counts as a threat
     private static final int DAMAGE_HOLD = 8;        // ticks to block after you took damage
 
     private boolean held = false;       // we are holding the use key
@@ -54,7 +57,7 @@ public class AutoShieldClient implements ClientModInitializer {
         boolean screenOpen = mc.gui.screen() != null;
         boolean manualUse = !held && mc.options.keyUse.isDown(); // you are eating / drawing a bow yourself
         boolean threat = !screenOpen && !manualUse
-                && (projectileIncoming(mc, player) || damageTicks > 0);
+                && (projectileIncoming(mc, player) || maceThreat(mc, player) || damageTicks > 0);
 
         if (threat) {
             clearTicks = 0;
@@ -84,6 +87,22 @@ public class AutoShieldClient implements ClientModInitializer {
 
     private boolean hasShieldInHand(LocalPlayer player) {
         return player.getMainHandItem().is(Items.SHIELD) || player.getOffhandItem().is(Items.SHIELD);
+    }
+
+    /** True if another player holding a mace is close, or is falling onto you from above. */
+    private boolean maceThreat(Minecraft mc, LocalPlayer player) {
+        AABB area = player.getBoundingBox().inflate(MELEE_RANGE);
+        List<Player> others = mc.level.getEntitiesOfClass(
+                Player.class, area, p -> p != player && p.getMainHandItem().is(Items.MACE));
+        for (Player p : others) {
+            if (p.distanceTo(player) <= MELEE_CLOSE) {
+                return true;
+            }
+            if (p.getDeltaMovement().y < -0.3 && p.getY() > player.getY()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** True if a projectile that is not yours is flying toward you. */
